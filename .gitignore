@@ -1,0 +1,22 @@
+# General
+.DS_Store
+._*
+*.log
+
+# Heavy Data (Ignored to prevent upload errors)
+data/
+backend/index/  # Original index folder (we upload index_deploy instead)
+backend/venv/
+backend/.env
+backend/*.pyc
+
+# Search Index (Too large for git usually, unless user specifically wants it)
+# We will exclude it by default to prevent upload errors, but allow user to force add it if they really want.
+# User instruction said they wanted to sync index, but for initial large upload drag-drop it fails.
+# Using CLI is better.
+backend/index/
+
+# Frontend (if duplicates exist)
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
