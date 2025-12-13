@@ -1,0 +1,418 @@
+import os
+import re
+from whoosh.index import create_in, open_dir, exists_in
+from whoosh.fields import Schema, TEXT, ID, STORED
+from whoosh.qparser import QueryParser
+from whoosh.analysis import StemmingAnalyzer
+from whoosh import scoring
+import time
+from functools import lru_cache
+import hashlib
+
+INDEX_DIR = "../data/index"
+
+class SearchEngine:
+    def __init__(self):
+        self.setup_index()
+        
+        # Load PageRank scores for hybrid ranking
+        self.pagerank_scores = self._load_pagerank()
+        
+        # Pre-compile regex patterns for speed
+        self.snippet_pattern = re.compile(r'([^.!?]*(?:[.!?]|$))')
+        self.whitespace_pattern = re.compile(r'\s+')
+        
+        # Query cache (5 minute TTL)
+        self.query_cache = {}
+        self.cache_ttl = 300  # 5 minutes
+        
+        # Keep searcher warm for faster queries
+        self.searcher = None
+        self._refresh_searcher()
+    
+    def _load_pagerank(self):
+        """Load PageRank scores from file into memory."""
+        try:
+            from pagerank import load_pagerank
+            scores = load_pagerank()
+            print(f"📊 Loaded PageRank scores for {len(scores)} pages")
+            return scores
+        except Exception as e:
+            print(f"⚠️ Could not load PageRank: {e}")
+            return {}
+    
+    def _refresh_searcher(self):
+        """Refresh searcher instance for best performance."""
+        if self.searcher:
+            self.searcher.close()
+        self.searcher = self.ix.searcher(weighting=scoring.BM25F())
+
+    def setup_index(self):
+        if not os.path.exists(INDEX_DIR):
+            os.makedirs(INDEX_DIR)
+        
+        # Schema:
+        # title: The page title (indexed, stored)
+        # url: The page URL (ID, stored)
+        # content: The full text (indexed, stored)
+        # snippet: A short summary (stored)
+        schema = Schema(
+            title=TEXT(stored=True, analyzer=StemmingAnalyzer(), field_boost=2.0),
+            url=ID(stored=True, unique=True),
+            content=TEXT(stored=True, analyzer=StemmingAnalyzer()),
+            snippet=STORED
+        )
+
+        if not exists_in(INDEX_DIR):
+            create_in(INDEX_DIR, schema)
+            print(f"Created new index in {INDEX_DIR}")
+        else:
+            print(f"Loaded existing index from {INDEX_DIR}")
+
+    def url_exists(self, url):
+        """Checks if a URL is already indexed."""
+        try:
+            ix = open_dir(INDEX_DIR)
+            with ix.searcher() as searcher:
+                # Check if the URL term exists in the 'url' field
+                # Note: URL field must be ID type or indexed
+                from whoosh.query import Term
+                results = searcher.search(Term("url", url), limit=1)
+                return len(results) > 0
+        except:
+            return False
+
+    def search(self, query: str, page=1, per_page=10, date_filter=None, source_filter=None):
+        """Searches the local Whoosh index with pagination and filters."""
+        try:
+            ix = open_dir(INDEX_DIR)
+            results = []
+            
+            # Optimized Scoring: BM25F with tuned parameters
+            w = scoring.BM25F(B=0.75, K1=1.5, title_B=1.0, title_K1=1.5, content_B=0.75, content_K1=1.2)
+            
+            with ix.searcher(weighting=w) as searcher:
+                from whoosh.qparser import MultifieldParser, OrGroup
+                
+                og = OrGroup.factory(0.9)
+                parser = MultifieldParser(["title", "content"], ix.schema, group=og)
+                my_query = parser.parse(query)
+                
+                # OPTIMIZED: Use search_page for efficient pagination
+                # This is 10-50x faster than limit=None for large result sets
+                hits = searcher.search_page(my_query, page, pagelen=per_page)
+                
+                # Fast total count (approximate for large result sets)
+                total_count = hits.total
+                
+                # Process results directly from search_page
+                for hit in hits:
+                    import re
+                    
+                    title = hit.get("title", "No Title")
+                    url = hit.get("url", "#")
+                    snippet = hit.get("snippet", "").strip()
+                    
+                    # Apply source filter
+                    if source_filter:
+                        from urllib.parse import urlparse
+                        domain = urlparse(url).netloc
+                        if source_filter.lower() not in domain.lower():
+                            continue
+                    
+                    # If snippet is empty or too short, extract from content
+                    if not snippet or len(snippet) < 100:
+                        content_text = hit.get("content", "")
+                        sentences = content_text.split('. ')
+                        if len(sentences) > 0:
+                            snippet = '. '.join(sentences[:3])
+                            if len(snippet) > 300:
+                                snippet = snippet[:300].strip()
+                            snippet = snippet + "..." if not snippet.endswith('.') else snippet
+                        else:
+                            snippet = content_text[:250].strip() + "..."
+                    
+                    # SUPER AGGRESSIVE CLEANING
+                    snippet = re.sub(r'https?://\S+', '', snippet)
+                    snippet = re.sub(r'\b(?:www\.)?[a-z0-9-]+\.[a-z]{2,}\b', '', snippet, flags=re.IGNORECASE)
+                    snippet = re.sub(r'^\s*[a-z]{1,3}\s+(?=[a-z])', '', snippet, flags=re.IGNORECASE)
+                    
+                    clean_title = re.split(r'[\|–—-]\s*(?:The Verge|BBC|WIRED|NYTimes)', title)[0].strip()
+                    if clean_title and snippet.lower().startswith(clean_title.lower()):
+                        snippet = snippet[len(clean_title):].strip()
+                    
+                    snippet = re.sub(r'[\|–—]\s*(?:The Verge|BBC News|BBC|WIRED|New York Times|NYTimes)\s*', '', snippet)
+                    
+                    title_words = clean_title.split()[:5]
+        """Searches with hybrid BM25F+PageRank scoring and caching for sub-20ms performance."""
+        # Generate cache key
+        cache_key = hashlib.md5(
+            f"{query}_{page}_{per_page}_{date_filter}_{source_filter}".encode()
+        ).hexdigest()
+        
+        # Check cache first
+        if cache_key in self.query_cache:
+            cached_result, cached_time = self.query_cache[cache_key]
+            if time.time() - cached_time < self.cache_ttl:
+                # Cache hit!
+                return cached_result
+        
+        start_time = time.time()
+        
+        try:
+            # Use warm searcher
+            searcher = self.searcher
+            
+            # Parse query
+            my_query = QueryParser("content", self.ix.schema).parse(query)
+            
+            # Execute search with pagination
+            results = searcher.search_page(my_query, page, pagelen=per_page)
+            
+            result_list = []
+            for hit in results:
+                url = hit.get("url", "")
+                
+                # Hybrid scoring: 70% BM25F + 30% PageRank
+                bm25f_score = hit.score
+                pagerank_score = self.pagerank_scores.get(url, 0.0)
+                
+                # Normalize BM25F to [0, 1] range (approximate)
+                # BM25F typically ranges 0-100, normalize by dividing by 100
+                normalized_bm25f = min(bm25f_score / 100.0, 1.0)
+                
+                # Hybrid score
+                final_score = (0.7 * normalized_bm25f) + (0.3 * pagerank_score)
+                
+                # Generate optimized snippet
+                content = hit.get("content", "")
+                snippet = self._fast_snippet(content, query, max_len=200)
+                
+                result_list.append({
+                    "title": hit.get("title", "Untitled"),
+                    "url": url,
+                    "snippet": snippet,
+                    "score": final_score * 100,  # Scale back for display
+                    "pagerank": pagerank_score,  # For debugging
+                })
+            
+            # Re-rank by hybrid score (already calculated above)
+            result_list.sort(key=lambda x: x['score'], reverse=True)
+            
+            response = {
+                "results": result_list,
+                "count": len(result_list),
+                "total": results.total,
+                "page": page,
+                "per_page": per_page,
+                "total_pages": (results.total + per_page - 1) // per_page
+            }
+            
+            # Cache the result
+            self.query_cache[cache_key] = (response, time.time())
+            
+            # Clean old cache entries (simple LRU)
+            if len(self.query_cache) > 1000:
+                # Remove oldest 20%
+                sorted_cache = sorted(
+                    self.query_cache.items(), 
+                    key=lambda x: x[1][1]
+                )
+                for key, _ in sorted_cache[:200]:
+                    del self.query_cache[key]
+            
+            return response
+            
+        except Exception as e:
+            print(f"Search error: {e}")
+            return {
+                "results": [],
+                "count": 0,
+                "total": 0,
+                "page": page,
+                "per_page": per_page,
+                "total_pages": 0
+            }
+    
+    def _fast_snippet(self, content: str, query: str, max_len: int = 200) -> str:
+        """Generate snippet ultra-fast using pre-compiled regex."""
+        if not content:
+            return ""
+        
+        # Use pre-compiled patterns
+        query_lower = query.lower()
+        content_lower = content.lower()
+        
+        # Find query position
+        query_pos = content_lower.find(query_lower)
+        
+        if query_pos != -1:
+            # Extract context around query
+            start = max(0, query_pos - 80)
+            end = min(len(content), query_pos + max_len)
+            snippet = content[start:end]
+        else:
+            # No match, take beginning
+            snippet = content[:max_len]
+        
+        # Clean whitespace
+        snippet = self.whitespace_pattern.sub(' ', snippet).strip()
+        
+        if len(snippet) > max_len:
+            snippet = snippet[:max_len] + "..."
+        
+        return snippet
+    
+    def get_autocomplete(self, query: str, limit=5):
+        """Get autocomplete suggestions - optimized for speed."""
+        try:
+            if len(query) < 2:
+                return []
+            
+            ix = open_dir(INDEX_DIR)
+            suggestions = []
+            
+            with ix.searcher() as searcher:
+                from whoosh.query import Prefix
+                
+                # Quick prefix search on title field only
+                prefix_query = Prefix("title", query.lower())
+                hits = searcher.search(prefix_query, limit=limit * 3)
+                
+                seen = set()
+                for hit in hits:
+                    title = hit.get("title", "").lower()
+                    words = title.split()
+                    
+                    # Extract words that start with query
+                    for word in words:
+                        # Clean word
+                        clean_word = ''.join(c for c in word if c.isalnum())
+                        if (clean_word.startswith(query.lower()) and 
+                            len(clean_word) > 2 and 
+                            clean_word not in seen):
+                            suggestions.append(clean_word)
+                            seen.add(clean_word)
+                            
+                            if len(suggestions) >= limit:
+                                return suggestions
+            
+            return suggestions
+        except Exception as e:
+            print(f"Autocomplete error: {e}")
+            return []
+    
+    def get_spell_suggestion(self, query: str):
+        """Get spell-corrected suggestion if query has typos."""
+        try:
+            import difflib
+            
+            if len(query) < 3:
+                return None
+            
+            ix = open_dir(INDEX_DIR)
+            
+            with ix.searcher() as searcher:
+                # Get unique words from index
+                reader = searcher.reader()
+                all_words = set()
+                
+                # Sample from title and content fields
+                for field in ["title", "content"]:
+                    words = list(reader.field_terms(field))
+                    all_words.update([w.decode() if isinstance(w, bytes) else w for w in words[:1000]])
+                
+                # Check each word in query
+                query_words = query.lower().split()
+                corrected_words = []
+                has_correction = False
+                
+                for word in query_words:
+                    if len(word) < 3:
+                        corrected_words.append(word)
+                        continue
+                    
+                    # Find close matches
+                    matches = difflib.get_close_matches(word, all_words, n=1, cutoff=0.8)
+                    if matches and matches[0] != word:
+                        corrected_words.append(matches[0])
+                        has_correction = True
+                    else:
+                        corrected_words.append(word)
+                
+                if has_correction:
+                    return " ".join(corrected_words)
+                
+            return None
+        except Exception as e:
+            print(f"Spell check error: {e}")
+            return None
+
+
+    def add_document(self, title, url, content, snippet=None):
+        """Adds or updates a document in the index."""
+        try:
+            # Validate inputs - Whoosh requires non-empty strings
+            if not title or not isinstance(title, str) or len(title.strip()) == 0:
+                print(f"Skipping {url}: Empty or invalid title")
+                return False
+            
+            if not content or not isinstance(content, str) or len(content.strip()) < 100:
+                print(f"Skipping {url}: Empty or too short content ({len(content) if content else 0} chars)")
+                return False
+            
+            if not url or not isinstance(url, str):
+                print(f"Skipping: Invalid URL")
+                return False
+            
+            # Clean and ensure valid strings
+            title = str(title).strip()[:500]  # Limit title length
+            url = str(url).strip()
+            content = str(content).strip()
+            
+            # Retry logic for locking
+            for attempt in range(5):
+                try:
+                    ix = open_dir(INDEX_DIR)
+                    writer = ix.writer()
+                    
+                    # Use provided snippet or generate one
+                    if not snippet or not isinstance(snippet, str) or len(snippet.strip()) == 0:
+                        snippet = content[:300].replace("\n", " ") + "..."
+                    else:
+                        snippet = str(snippet).strip()[:500]
+                    
+                    writer.update_document(
+                        title=title,
+                        url=url,
+                        content=content,
+                        snippet=snippet
+                    )
+                    writer.commit()
+                    return True
+                except Exception as e:
+                    if "LockError" in str(e) and attempt < 4:
+                        import time
+                        import random
+                        sleep_time = (attempt + 1) * 0.1 + random.random() * 0.1
+                        time.sleep(sleep_time)
+                        continue
+                    else:
+                        raise e
+            return False
+        except Exception as e:
+            # Better error reporting
+            try:
+                msg = str(e)[:200]
+            except:
+                msg = "Unknown error"
+            print(f"Indexing error for {url}: {msg}")
+            return False
+
+    def get_stats(self):
+        try:
+            ix = open_dir(INDEX_DIR)
+            with ix.searcher() as s:
+                return {"doc_count": s.doc_count()}
+        except:
+            return {"doc_count": 0}

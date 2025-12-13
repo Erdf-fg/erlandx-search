@@ -1,0 +1,15 @@
+# Render Blueprint for Erlandx Search Backend
+services:
+  - type: web
+    name: erlandx-search-api
+    env: python
+    region: singapore  # Closest to Indonesia
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: chmod +x start.sh && ./start.sh
+    healthCheckPath: /stats
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: CORS_ORIGINS
+        value: "https://erlandx-search.vercel.app,http://localhost:3000"
