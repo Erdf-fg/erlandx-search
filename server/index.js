@@ -4,13 +4,24 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 
 const app = express();
-app.use(cors());
+// Enhanced CORS for production
+app.use(cors({
+    origin: ["https://among-kos.netlify.app", "http://localhost:5173"],
+    methods: ["GET", "POST"],
+    credentials: true
+}));
+
+// Health check for Zeabur/Render/HuggingFace
+app.get('/', (req, res) => {
+    res.send('Among Digital Server is Running!');
+});
 
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
+        origin: ["https://among-kos.netlify.app", "http://localhost:5173"],
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 
@@ -266,6 +277,6 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT} (host 0.0.0.0)`);
 });
