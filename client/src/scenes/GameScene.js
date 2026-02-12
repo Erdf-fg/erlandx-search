@@ -25,8 +25,7 @@ export default class GameScene extends Phaser.Scene {
     create() {
         this.otherPlayers = this.physics.add.group();
 
-        // Dynamic server URL: use env var in production, localhost in dev
-        const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
+        const serverUrl = import.meta.env.VITE_SERVER_URL || 'https://amongdig.zeabur.app' || 'http://localhost:3000';
         this.socket = io(serverUrl);
 
         // Draw Map
