@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Dashboard | Among Digital</title>
+    <link rel="stylesheet" href="/src/style.css">
+    <style>
+        body {
+            overflow: auto;
+            align-items: flex-start;
+            padding: 2rem;
+        }
+
+        .dashboard {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .card {
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid var(--primary);
+            padding: 1.5rem;
+            border-radius: 16px;
+            backdrop-filter: blur(10px);
+        }
+
+        .player-list {
+            margin-top: 2rem;
+        }
+
+        .player-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .badge {
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+        }
+
+        .badge-impostor {
+            background: var(--danger);
+        }
+
+        .badge-crew {
+            background: var(--primary);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="dashboard">
+        <h1 style="font-size: 2.5rem;">Teacher Dashboard 🎓</h1>
+        <p style="color: var(--secondary)">Monitor digital education progress and manage missions.</p>
+
+        <div class="stats-grid">
+            <div class="card">
+                <h3>Mission Status</h3>
+                <h2 id="game-state" style="color: var(--primary);">WAITING...</h2>
+                <button id="start-mission-btn" style="width: 100%; margin-top: 10px;">FORCE START</button>
+            </div>
+            <div class="card">
+                <h3>Live Participation</h3>
+                <h2 id="player-count">0 Players</h2>
+            </div>
+            <div class="card">
+                <h3>Task Completion</h3>
+                <div style="height: 10px; width: 100%; background: #334155; border-radius: 5px; margin: 10px 0;">
+                    <div id="admin-task-bar" style="height: 100%; width: 0%; background: var(--success);"></div>
+                </div>
+                <p id="task-detail">0 / 0 Tasks done</p>
+            </div>
+        </div>
+
+        <div class="card player-list">
+            <h3>Connected Students</h3>
+            <div id="students-container">
+                <!-- Players will be listed here -->
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/src/admin.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Among Digital | Education Sabotage</title>
+</head>
+
+<body>
+  <div id="game-container"></div>
+
+  <div id="ui-layer">
+    <div id="task-bar-container"
+      style="position: absolute; top: 20px; left: 20px; width: 300px; height: 25px; background: rgba(0,0,0,0.5); border: 2px solid #6366f1; border-radius: 12.5px; overflow: hidden; z-index: 100;">
+      <div id="task-bar-fill" style="width: 0%; height: 100%; background: #22c55e; transition: width 0.5s;"></div>
+      <div
+        style="position: absolute; top: 0; left: 0; width: 100%; text-align: center; color: white; font-size: 0.8rem; line-height: 25px; font-weight: bold;">
+        TOTAL TASKS COMPLETED</div>
+    </div>
+
+    <div id="lobby-overlay" class="overlay">
+      <h1>Among Digital</h1>
+      <div class="input-group">
+        <input type="text" id="player-name" placeholder="Enter your name..." maxlength="12">
+      </div>
+      <button id="join-btn">START MISSION</button>
+    </div>
+
+    <div id="lobby-waiting-overlay" class="hidden"
+      style="position: absolute; top: 20px; right: 20px; display: flex; flex-direction: column; align-items: flex-end; z-index: 1000; pointer-events: none;">
+      <div id="lobby-status-text"
+        style="font-size: 1rem; color: #fff; background: rgba(0,0,0,0.6); padding: 5px 15px; border-radius: 10px 10px 0 0; border-bottom: 2px solid var(--secondary); font-family: 'Orbitron';">
+        WAITING FOR CREW...</div>
+      <div id="lobby-timer-display"
+        style="font-size: 2.5rem; color: var(--secondary); font-family: 'Orbitron'; background: rgba(0,0,0,0.8); padding: 5px 20px; border-radius: 0 0 10px 10px; min-width: 80px; text-align: center; border: 1px solid var(--secondary);">
+        --</div>
+    </div>
+
+    <div id="game-over-overlay" class="overlay hidden" style="z-index: 200;">
+      <h1 id="win-text" style="font-size: 5rem;">VICTORY</h1>
+      <p id="win-reason" style="font-size: 1.5rem; color: var(--secondary); margin-bottom: 2rem;">All tasks completed!
+      </p>
+      <button onclick="location.reload()" style="background: var(--dark); border: 1px solid var(--secondary);">BACK TO
+        LOBBY</button>
+    </div>
+
+    <div id="task-overlay" class="overlay hidden">
+      <!-- Dynamic Task UI will be injected here -->
+      <div id="task-content"
+        style="background: #1e293b; padding: 2rem; border-radius: 20px; border: 2px solid var(--primary);">
+        <h2 id="task-title">Digital Literacy Quiz</h2>
+        <div id="task-body"></div>
+        <button id="close-task-btn" style="margin-top: 1rem; font-size: 1rem; padding: 0.5rem 1rem;">CLOSE</button>
+      </div>
+    </div>
+
+    <div id="meeting-overlay" class="overlay hidden">
+      <h1 style="color: var(--danger);">EMERGENCY MEETING</h1>
+      <div id="voting-timer" style="font-size: 2rem; margin-bottom: 1rem;">60s</div>
+      <div id="player-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+        <!-- Players will be listed here -->
+      </div>
+    </div>
+
+    <!-- Role Announcement Overlay -->
+    <div id="role-overlay" class="overlay hidden" style="background: rgba(0,0,0,0.95); z-index: 500;">
+      <h2 id="role-type" style="font-size: 3.5rem; letter-spacing: 10px; margin-bottom: 10px;">IMPOSTOR</h2>
+      <p id="role-desc" style="font-size: 1.2rem; color: #fff;"></p>
+    </div>
+
+    <!-- Instructions Overlay -->
+    <div id="intro-overlay" class="overlay" style="background: rgba(10,10,10,1); z-index: 1000;">
+      <h1 style="color: var(--primary);">AMONG DIGITAL</h1>
+      <div style="background: #1e293b; padding: 20px; border-radius: 10px; max-width: 80%; text-align: left;">
+        <p>🚀 <b>Mission:</b> Digitizing Education in Indonesia.</p>
+        <p>🚪 <b>Doors:</b> Use rooms to hide or trap. Open them with USE.</p>
+        <p>📹 <b>Security:</b> Watch the hub in Security Hub room.</p>
+      </div>
+      <button id="intro-continue-btn" style="margin-top: 20px;">I UNDERSTAND</button>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>
